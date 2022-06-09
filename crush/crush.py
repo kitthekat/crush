@@ -3,7 +3,7 @@ from typing import NoReturn, Iterable, Union, Optional, Annotated
 import numpy as np
 from dataclasses import dataclass, field
 from toolz import pipe
-from operator import add, sub
+from operator import add, sub, truediv
 
 
 def main() -> NoReturn:
@@ -91,9 +91,7 @@ class Row:
     def __repr__(self):
         return str(self.shapes)
 
-    @staticmethod
-    def _make_tiles(some_list: Iterable(Optional[int])):
-        return [i * [ActiveTile()] if isinstance(i, int) else DeadTile() for i in some_list]
+
 
 
 class GameBoard:
@@ -119,7 +117,7 @@ class GameBoard:
     def __init__(
         self,
         rows: Union[Iterable[Iterable[Optional[int]]], Annotated[Iterable[int], 2]] = (5, 5),
-        extras: bool = True
+        include_extras: bool = True
     ):
         try:
             assert isinstance(rows, Iterable)
@@ -134,13 +132,41 @@ class GameBoard:
             case True:
                 self.global_width, self.global_height = rows[0], rows[1]
             case False:
-                self.global_width = self._get_max_row_width(rows)
+                self.widths = self._get_row_widths(rows)
+                # Check that row widths are valid
+                try:
+                    assert all([i % 2 == 0 for i in self.widths])
+                except AssertionError:
+                    raise(
+                        ValueError,
+                        "Row widths must be entirely odd or entirely even"
+                    )
+                self.global_width = max(self.widths)
                 self.global_height = len(rows)
 
+        self.board = self.initialize_board(rows, include_extras)
+
+    def initialize_board(self, rows, include_extras):
+        for i, v in enumerate(self.widths):
+            padding = int(truediv(sub(self.global_width, v), 2))
+            for tile_placeholder in rows[i]:
+                tiles = np.array(
+                    add(
+                        padding * [DeadTile()],
+                        self._make_tiles(rows),
+                        padding * [DeadTile()]
+                    )
+                )
+        pass
+
     @staticmethod
-    def _get_max_row_width(
+    def _make_tiles(some_list: Iterable(Optional[int])):
+        return [i * [ActiveTile()] if isinstance(i, int) else DeadTile() for i in some_list]
+
+    @staticmethod
+    def _get_row_widths(
         rows: Union[Iterable[Iterable[Optional[int]]], Annotated[Iterable[int], 2]]
-    ) -> int:
+    ) -> list:
         """
         Calculates maximum row width and returns as overall game board width
 
@@ -151,9 +177,9 @@ class GameBoard:
 
         Returns
         -------
-        Maximum row length
+        List of row lengths
         """
-        return max(
+        return list(
             map(
                 lambda row:  # Calculates len(non-integers) + sum(integers)
                 add(
