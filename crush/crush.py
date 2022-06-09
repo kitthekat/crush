@@ -2,6 +2,8 @@
 from typing import NoReturn, Iterable, Union, Optional, Annotated
 import numpy as np
 from dataclasses import dataclass, field
+from toolz import pipe
+from operator import add, sub
 
 
 def main() -> NoReturn:
@@ -20,7 +22,7 @@ class Game:
     pass
 
 
-@dataclass
+@dataclass(order=False)
 class GameBoardObject:
     movable: bool = True
     disposable: bool = False
@@ -79,10 +81,19 @@ class Row:
 
     """
     def __init__(self, size: Iterable[Optional[int]]):
-        self.shapes = [i * [ActiveTile()] if isinstance(i, int) else DeadTile() for i in size]
+        self.tiles = pipe(
+            size,
+            self._make_tiles,
+            np.array,
+            lambda x: x.flatten()
+        )
 
     def __repr__(self):
-        print(self.shapes)
+        return str(self.shapes)
+
+    @staticmethod
+    def _make_tiles(some_list: Iterable(Optional[int])):
+        return [i * [ActiveTile()] if isinstance(i, int) else DeadTile() for i in some_list]
 
 
 class GameBoard:
@@ -107,10 +118,54 @@ class GameBoard:
     """
     def __init__(
         self,
-        sizes: Union[Iterable[Iterable[Optional[int]]], Annotated[Iterable[int], 2]] = (5, 5),
+        rows: Union[Iterable[Iterable[Optional[int]]], Annotated[Iterable[int], 2]] = (5, 5),
         extras: bool = True
     ):
         try:
-            assert isinstance(sizes, Iterable)
+            assert isinstance(rows, Iterable)
         except AssertionError:
-            raise()
+            raise(
+                TypeError,
+                f"Unable to parse object type {type(rows)} into game pieces"
+            )
+        # Determine if user is inputting rows line-by-line or as an X, Y grid
+        # and assign global width, height accordingly
+        match isinstance(rows[0], int):
+            case True:
+                self.global_width, self.global_height = rows[0], rows[1]
+            case False:
+                self.global_width = self._get_max_row_width(rows)
+                self.global_height = len(rows)
+
+    @staticmethod
+    def _get_max_row_width(
+        rows: Union[Iterable[Iterable[Optional[int]]], Annotated[Iterable[int], 2]]
+    ) -> int:
+        """
+        Calculates maximum row width and returns as overall game board width
+
+        Parameters
+        ----------
+        rows
+            An iterable matching the __init__ rows typing
+
+        Returns
+        -------
+        Maximum row length
+        """
+        return max(
+            map(
+                lambda row:  # Calculates len(non-integers) + sum(integers)
+                add(
+                    sum(  # The sum of valid integers
+                        valid_ints := list(
+                            filter(  # Remove non-integers
+                                lambda x: isinstance(x, int), row
+                            )
+                        )
+                    ),
+                    sub(len(row), len(valid_ints))  # The length of non-integers
+                ),
+                rows
+            )
+        )
